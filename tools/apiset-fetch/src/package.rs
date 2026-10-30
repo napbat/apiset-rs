@@ -193,17 +193,22 @@ fn from_wim(file: &HttpFile, components: &[String]) -> Result<BTreeMap<String, P
     Ok(payloads)
 }
 
-/// Return `true` if a cabinet entry is the package cabinet of an update.
-fn is_package_cabinet(name: &str) -> bool {
+/// Return `true` if a cabinet entry is a cabinet that can hold payloads: not a servicing
+/// stack, scan or deployment cabinet.
+fn is_payload_cabinet(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
     std::path::Path::new(&name)
         .extension()
         .is_some_and(|ext| ext.eq_ignore_ascii_case("cab"))
-        && name.contains("-kb")
         && !name.starts_with("ssu-")
         && !name.contains("wsusscan")
         && !name.contains("desktopdeployment")
         && !name.contains("aggregatedmetadata")
+}
+
+/// Return `true` if a cabinet entry is the package cabinet of an update.
+fn is_package_cabinet(name: &str) -> bool {
+    is_payload_cabinet(name) && name.to_ascii_lowercase().contains("-kb")
 }
 
 /// Read payloads from an MSU or a CAB that is a cabinet file.
@@ -229,7 +234,7 @@ fn from_cabinet(file: HttpFile, components: &[String]) -> Result<BTreeMap<String
     io::copy(&mut outer.open_file(&inner_name)?, &mut spool.file()?)?;
     let mut inner = Cab::open(spool.file()?)?;
     let Some(psf_name) = psf_name.filter(|_| inner.find(INDEX_NAME).is_some()) else {
-        return payloads_in_cabinet(&mut inner, components);
+        return search_cabinet(&mut inner, components, 1);
     };
 
     let index = PsfIndex::parse(&String::from_utf8(inner.read(INDEX_NAME)?)?)?;
@@ -263,6 +268,47 @@ fn from_cabinet(file: HttpFile, components: &[String]) -> Result<BTreeMap<String
             checked = msdelta::apply(&[], &checked)?;
         }
         payloads.insert(component, payload(checked, delta)?);
+    }
+    Ok(payloads)
+}
+
+/// The deepest nesting of cabinets that the tool follows.
+const MAX_NESTING: usize = 4;
+
+/// Read payloads from a cabinet and from the cabinets that it holds.
+///
+/// A Windows 10 MSU holds `Windows10.0-KBxxxxxxx-x64.cab`. That cabinet holds a second
+/// `Windows10.0-KBxxxxxxx-x64.cab`, which holds the payloads in `Cab_N_for_KBxxxxxxx_PSFX.cab`
+/// files.
+fn search_cabinet<R: ReadAt>(
+    cabinet: &mut Cab<R>,
+    components: &[String],
+    depth: usize,
+) -> Result<BTreeMap<String, Payload>> {
+    let mut payloads = payloads_in_cabinet(cabinet, components)?;
+    if depth >= MAX_NESTING {
+        return Ok(payloads);
+    }
+    let nested: Vec<String> = cabinet
+        .entries()
+        .iter()
+        .filter(|entry| is_payload_cabinet(&entry.name))
+        .map(|entry| entry.name.clone())
+        .collect();
+    for name in nested {
+        let missing: Vec<String> = components
+            .iter()
+            .filter(|c| !payloads.contains_key(*c))
+            .cloned()
+            .collect();
+        if missing.is_empty() {
+            break;
+        }
+        // A nested cabinet can be larger than 700 MB: keep it in a temporary file.
+        let spool = Spool::create()?;
+        io::copy(&mut cabinet.open_file(&name)?, &mut spool.file()?)?;
+        let mut inner = Cab::open(spool.file()?)?;
+        payloads.extend(search_cabinet(&mut inner, &missing, depth + 1)?);
     }
     Ok(payloads)
 }

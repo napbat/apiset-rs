@@ -135,8 +135,16 @@ impl<'a> Rebuilder<'a> {
             return reason.clone();
         }
         if let Some(delta) = self.deltas.get(target) {
-            let source = source_hash(delta).unwrap_or_default();
-            return format!("the source {source:.16} of the delta is not available");
+            return source_hash(delta).map_or_else(
+                || {
+                    let tried = self.tried.iter().filter(|(t, _)| t == target).count();
+                    format!(
+                        "the delta has no source hash, and none of the {tried} known files of \
+                         its release is its source"
+                    )
+                },
+                |source| format!("the source {source:.16} of the delta is not available"),
+            );
         }
         "no package with the file is available".to_owned()
     }
@@ -161,6 +169,7 @@ impl<'a> Rebuilder<'a> {
                     .filter(|c| !self.tried.contains(&(target.clone(), c.clone())))
                     .collect(),
             };
+            let with_hash = source_hash(&delta).is_some();
             for source in candidates {
                 match msdelta::apply(&self.known[&source], &delta) {
                     Ok(bytes) => {
@@ -168,9 +177,12 @@ impl<'a> Rebuilder<'a> {
                         progress |= self.add_file(&target, bytes);
                         break;
                     }
-                    Err(e) => {
+                    // A wrong candidate for a delta without a source hash is not a failure.
+                    Err(e) if with_hash => {
                         self.failures
                             .insert(target.clone(), format!("msdelta: {e}"));
+                    }
+                    Err(_) => {
                         self.tried.insert((target.clone(), source));
                     }
                 }
