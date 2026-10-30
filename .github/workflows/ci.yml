@@ -47,6 +47,13 @@ jobs:
           cargo check --manifest-path fuzz/Cargo.toml --all-targets
           cargo clippy --manifest-path fuzz/Cargo.toml --all-targets -- -D warnings
 
+      - name: Check the apiset-fetch tool
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        run: |
+          cargo fmt --manifest-path tools/apiset-fetch/Cargo.toml --check
+          cargo clippy --manifest-path tools/apiset-fetch/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path tools/apiset-fetch/Cargo.toml
+
       - name: Check formatting
         run: cargo fmt --all --check
 

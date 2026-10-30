@@ -31,9 +31,10 @@ top-level item (for example `ci`, `fuzz`, `readme`).
 ## Lints: Clippy pedantic
 
 The crate denies all warnings, all Clippy `pedantic` lints, `missing_docs` and `unsafe_code`.
-The `[lints]` tables in `Cargo.toml` and `fuzz/Cargo.toml` set this.
+The `[lints]` tables in `Cargo.toml`, `fuzz/Cargo.toml` and `tools/apiset-fetch/Cargo.toml` set
+this.
 
-- Keep the `[lints]` tables of the two manifests the same.
+- Keep the `[lints]` tables of the three manifests the same.
 - Do not lower a lint level in a manifest or in the code.
 - Do not use `#[allow(...)]`. The manifests deny `clippy::allow_attributes`.
 - Use `#[expect(lint, reason = "...")]` only if no change to the code can remove the lint.
@@ -50,6 +51,7 @@ cargo clippy --all-features --all-targets -- -D warnings
 cargo clippy --no-default-features --all-targets -- -D warnings
 cargo clippy --no-default-features --features pe --all-targets -- -D warnings
 cargo clippy --manifest-path fuzz/Cargo.toml --all-targets -- -D warnings
+cargo clippy --manifest-path tools/apiset-fetch/Cargo.toml --all-targets -- -D warnings
 ```
 
 ## File size: 1000 lines
@@ -71,6 +73,7 @@ Follow the Cargo package layout:
 - Put the library root in `src/lib.rs`.
 - Put integration tests in `tests/`.
 - Put fuzz targets in `fuzz/fuzz_targets/`.
+- Put development tools in `tools/<name>/`, each as its own package with `publish = false`.
 - Put examples in `examples/` and benchmarks in `benches/`.
 - For a test, example or benchmark with many files, make a directory with a `main.rs` file and
   the modules.
@@ -126,10 +129,13 @@ Make sure that all these checks pass before you report a change as complete:
 ```sh
 cargo fmt --all -- --check
 cargo fmt --manifest-path fuzz/Cargo.toml -- --check
+cargo fmt --manifest-path tools/apiset-fetch/Cargo.toml -- --check
 cargo clippy --all-features --all-targets -- -D warnings
 cargo clippy --no-default-features --all-targets -- -D warnings
 cargo clippy --no-default-features --features pe --all-targets -- -D warnings
 cargo clippy --manifest-path fuzz/Cargo.toml --all-targets -- -D warnings
+cargo clippy --manifest-path tools/apiset-fetch/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path tools/apiset-fetch/Cargo.toml
 cargo test --all-features
 cargo test --no-default-features
 cargo doc --no-deps --all-features

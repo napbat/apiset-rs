@@ -145,6 +145,40 @@ cargo run --example resolve --features pe
 
 With no names, the program prints each entry and its hosts.
 
+## Download the schemas of each Windows build
+
+The schema changes with most Windows builds and editions. `tools/apiset-fetch` downloads each
+`apisetschema.dll` that the Microsoft symbol server has:
+
+1. It reads the [Winbindex](https://winbindex.m417z.com) index of `apisetschema.dll`. The
+   index lists each file, its Windows releases and updates, and its PE `TimeDateStamp` and
+   `SizeOfImage`.
+2. It downloads each file from
+   `https://msdl.microsoft.com/download/symbols/apisetschema.dll/{TimeDateStamp:08X}{SizeOfImage:x}/apisetschema.dll`.
+3. It verifies the SHA-256 of each file, and writes the file and `manifest.json` into the output
+   directory. The manifest names the Windows releases, updates, OS builds and editions of each
+   file. A second run downloads only the missing files.
+
+```text
+cargo run --manifest-path tools/apiset-fetch/Cargo.toml -- --out apiset-cache --check
+cargo run --manifest-path tools/apiset-fetch/Cargo.toml -- --release 1607 --release 11-24H2
+cargo run --manifest-path tools/apiset-fetch/Cargo.toml -- --list
+```
+
+`--check` parses each file with `ApiSetSchema::from_pe`, and writes the schema version and the
+entry count into the manifest. The tool does not commit the files, because they are Microsoft
+binaries.
+
+The symbol server does not have all files. A file is unavailable in these conditions:
+
+- Winbindex has no `TimeDateStamp` or `SizeOfImage` for the file.
+- The symbol server has no file for the key.
+- The symbol server has a different file for the key. Different builds can have the same
+  `TimeDateStamp` and `SizeOfImage`, and the server keeps only one file for each key.
+
+On 2026-10-30, the tool downloaded 156 of the 493 files. Most of them are from Windows 10. The
+symbol server had no files for Windows 11 24H2 and later.
+
 ## Development
 
 [`mise`](https://mise.jdx.dev/) manages the toolchain and the pre-commit hooks:
