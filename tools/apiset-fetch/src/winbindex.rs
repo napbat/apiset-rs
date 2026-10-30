@@ -34,6 +34,11 @@ pub struct Source {
     /// example `Microsoft-Windows-ApiSetSchema-server`.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub assemblies: Vec<String>,
+    /// The component directories of the assemblies, for example
+    /// `amd64_microsoft-windows-apisetschema-wnc_31bf3856ad364e35_10.0.26100.9549_none_6d8461b9bafd9b1b`.
+    /// An update payload stores the file below this directory.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub components: Vec<String>,
 }
 
 /// One distinct `apisetschema.dll` file.
@@ -187,14 +192,19 @@ fn parse_record(sha256: &str, record: &Value) -> Record {
 /// Parse one update of one release.
 fn parse_source(release: &str, update: &str, details: &Value) -> Source {
     let update_info = &details["updateInfo"];
-    let mut assemblies: Vec<String> = details["assemblies"]
-        .as_object()
+    let entries = details["assemblies"].as_object();
+    let mut assemblies: Vec<String> = entries
         .into_iter()
         .flat_map(|assemblies| assemblies.values())
         .filter_map(|assembly| str_field(&assembly["assemblyIdentity"], "name"))
         .collect();
     assemblies.sort();
     assemblies.dedup();
+    let mut components: Vec<String> = entries
+        .into_iter()
+        .flat_map(|assemblies| assemblies.keys().cloned())
+        .collect();
+    components.sort();
     Source {
         release: release.to_owned(),
         update: update.to_owned(),
@@ -202,6 +212,7 @@ fn parse_source(release: &str, update: &str, details: &Value) -> Source {
         date: str_field(update_info, "releaseDate")
             .or_else(|| str_field(&details["windowsVersionInfo"], "releaseDate")),
         assemblies,
+        components,
     }
 }
 
@@ -280,6 +291,7 @@ mod tests {
                 os_build: Some("14393.3204".into()),
                 date: Some("2019-09-10".into()),
                 assemblies: vec!["Microsoft-Windows-ApiSetSchema-server".into()],
+                components: vec!["amd64_server".into()],
             }]
         );
         assert!(server.is_in_release("1607"));

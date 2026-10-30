@@ -5,7 +5,6 @@ use crate::winbindex::Record;
 use apiset_rs::ApiSetSchema;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use std::fmt::Write;
 use std::fs;
 use std::path::Path;
 
@@ -22,6 +21,8 @@ pub enum Outcome {
     Cached,
     /// The symbol server does not have the file.
     Unavailable(String),
+    /// The tool rebuilt the file from an update package (`--rebuild`).
+    Rebuilt,
     /// The download or the hash check failed.
     Failed(String),
 }
@@ -36,14 +37,8 @@ pub struct Check {
 }
 
 /// Return the lowercase hex SHA-256 of `data`.
-fn sha256_hex(data: &[u8]) -> String {
-    Sha256::digest(data)
-        .iter()
-        .fold(String::with_capacity(64), |mut hex, byte| {
-            // Writing to a `String` cannot fail.
-            let _ = write!(hex, "{byte:02x}");
-            hex
-        })
+pub fn sha256_hex(data: &[u8]) -> String {
+    crate::hex(&Sha256::digest(data))
 }
 
 /// Download one record into `dir`, or keep the cached file.

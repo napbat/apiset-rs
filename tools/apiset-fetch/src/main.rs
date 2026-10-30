@@ -1,20 +1,29 @@
 //! Download each `apisetschema.dll` of Windows 10 and Windows 11.
 //!
 //! The tool reads the Winbindex index of `apisetschema.dll`, downloads each file from the
-//! Microsoft symbol server, and verifies its SHA-256. It writes the files and a
-//! `manifest.json` into the output directory. A second run downloads only the missing files.
+//! Microsoft symbol server, and verifies its SHA-256. With `--rebuild`, it rebuilds the files
+//! that the symbol server does not have from update packages and install media. It writes the
+//! files and a `manifest.json` into the output directory. A second run downloads only the
+//! missing files.
 //!
 //! ```text
 //! cargo run --manifest-path tools/apiset-fetch/Cargo.toml -- --out apiset-cache --check
-//! cargo run --manifest-path tools/apiset-fetch/Cargo.toml -- --release 11-24H2 --release 1607
+//! cargo run --manifest-path tools/apiset-fetch/Cargo.toml -- --release 11-24H2 --rebuild
 //! cargo run --manifest-path tools/apiset-fetch/Cargo.toml -- --list
 //! ```
 
+mod base;
+mod catalog;
 mod download;
+mod http;
+mod package;
+mod rebuild;
 mod winbindex;
 
 use download::{Check, Outcome};
 use serde::Serialize;
+use std::collections::BTreeMap;
+use std::fmt::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -23,6 +32,18 @@ use winbindex::Record;
 
 /// Result type of the tool.
 pub type Result<T, E = Box<dyn std::error::Error + Send + Sync>> = std::result::Result<T, E>;
+
+/// Return `bytes` as lowercase hex.
+#[must_use]
+pub fn hex(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .fold(String::with_capacity(bytes.len() * 2), |mut out, byte| {
+            // Writing to a `String` cannot fail.
+            let _ = write!(out, "{byte:02x}");
+            out
+        })
+}
 
 /// The usage text.
 const USAGE: &str = "\
@@ -36,6 +57,8 @@ Options:
                      11-24H2. Use the option more than one time for more releases.
   --jobs N           Download N files at the same time (default: 8)
   --check            Parse the schema in each file, and record its version and entry count
+  --rebuild          Rebuild the files that the symbol server does not have from update
+                     packages (Microsoft Update Catalog) and install media (UUP dump)
   --list             Print the files and their releases. Do not download.
   --index-url URL    Read the Winbindex index from URL
   -h, --help         Print this text";
@@ -47,6 +70,7 @@ struct Options {
     releases: Vec<String>,
     jobs: usize,
     check: bool,
+    rebuild: bool,
     list: bool,
     index_url: String,
 }
@@ -58,6 +82,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Option<Options>>
         releases: Vec::new(),
         jobs: 8,
         check: false,
+        rebuild: false,
         list: false,
         index_url: winbindex::DEFAULT_INDEX_URL.to_owned(),
     };
@@ -73,6 +98,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Option<Options>>
                 }
             }
             "--check" => options.check = true,
+            "--rebuild" => options.rebuild = true,
             "--list" => options.list = true,
             "--index-url" => options.index_url = value()?,
             "-h" | "--help" => return Ok(None),
@@ -94,6 +120,8 @@ struct ManifestEntry<'a> {
     check: Option<Check>,
     #[serde(skip_serializing_if = "Option::is_none")]
     check_error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rebuild_error: Option<String>,
 }
 
 impl ManifestEntry<'_> {
@@ -175,7 +203,62 @@ fn process_one<'a>(
         outcome,
         check,
         check_error,
+        rebuild_error: None,
     }
+}
+
+/// Read each file in `dir` into a map by SHA-256.
+fn cached_files(dir: &Path) -> Result<BTreeMap<String, Vec<u8>>> {
+    let mut files = BTreeMap::new();
+    for entry in std::fs::read_dir(dir)? {
+        let path = entry?.path();
+        if path
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("dll"))
+        {
+            let bytes = std::fs::read(&path)?;
+            files.insert(download::sha256_hex(&bytes), bytes);
+        }
+    }
+    Ok(files)
+}
+
+/// Rebuild the files that the symbol server does not have, and update their entries.
+fn rebuild_missing(
+    agent: &ureq::Agent,
+    records: &[Record],
+    entries: &mut [ManifestEntry<'_>],
+    options: &Options,
+) -> Result<()> {
+    let targets: Vec<String> = entries
+        .iter()
+        .filter(|e| matches!(e.outcome, Outcome::Unavailable(_)))
+        .map(|e| e.record.sha256.clone())
+        .collect();
+    if targets.is_empty() {
+        return Ok(());
+    }
+    println!("rebuilding {} file(s)", targets.len());
+    let known = cached_files(&options.out)?;
+    let mut rebuilder = rebuild::Rebuilder::new(agent, &options.out, records, known);
+    let results = rebuilder.run(&targets);
+    for entry in entries.iter_mut() {
+        match results.get(&entry.record.sha256) {
+            Some(rebuild::Rebuilt::Rebuilt) => {
+                entry.outcome = Outcome::Rebuilt;
+                if options.check {
+                    match download::check(entry.record, &options.out) {
+                        Ok(summary) => entry.check = Some(summary),
+                        Err(e) => entry.check_error = Some(e.to_string()),
+                    }
+                }
+                print_entry(0, 0, entry);
+            }
+            Some(rebuild::Rebuilt::Failed(reason)) => entry.rebuild_error = Some(reason.clone()),
+            None => {}
+        }
+    }
+    Ok(())
 }
 
 /// Print the progress line of one entry.
@@ -184,6 +267,7 @@ fn print_entry(number: usize, total: usize, entry: &ManifestEntry<'_>) {
         Outcome::Downloaded => "downloaded".to_owned(),
         Outcome::Cached => "cached".to_owned(),
         Outcome::Unavailable(reason) => format!("unavailable: {reason}"),
+        Outcome::Rebuilt => "rebuilt".to_owned(),
         Outcome::Failed(reason) => format!("FAILED: {reason}"),
     };
     let check = match (&entry.check, &entry.check_error) {
@@ -218,7 +302,10 @@ fn run(options: &Options) -> Result<bool> {
     }
 
     std::fs::create_dir_all(&options.out)?;
-    let entries = process(&agent, &selected, options);
+    let mut entries = process(&agent, &selected, options);
+    if options.rebuild {
+        rebuild_missing(&agent, &records, &mut entries, options)?;
+    }
     let manifest = options.out.join("manifest.json");
     std::fs::write(&manifest, serde_json::to_vec_pretty(&entries)?)?;
 
@@ -229,9 +316,11 @@ fn run(options: &Options) -> Result<bool> {
         .filter(|e| matches!(e.outcome, Outcome::Unavailable(_)))
         .count();
     println!(
-        "{} downloaded, {} cached, {unavailable} unavailable, {failed} failed. Manifest: {}",
+        "{} downloaded, {} cached, {} rebuilt, {unavailable} unavailable, {failed} failed. \
+         Manifest: {}",
         count(&Outcome::Downloaded),
         count(&Outcome::Cached),
+        count(&Outcome::Rebuilt),
         manifest.display()
     );
     Ok(failed == 0)
