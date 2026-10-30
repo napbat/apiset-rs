@@ -83,10 +83,6 @@ jobs:
         if: matrix.target == 'x86_64-pc-windows-msvc'
         run: cargo doc --no-deps --no-default-features --target ${{ matrix.target }}
 
-      - name: Verify release package
-        if: matrix.target == 'x86_64-pc-windows-msvc'
-        run: cargo package
-
   msrv:
     name: MSRV (Rust 1.88)
     runs-on: windows-latest

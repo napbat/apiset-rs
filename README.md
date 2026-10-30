@@ -17,8 +17,9 @@ apiset-rs is a parser, builder and resolver for the Windows API set schema. It w
 - A builder that writes a schema of each version, with sorted entries, sorted values and the
   version 6 hash table.
 - Parsing and encoding of each fixed-size record, for example `API_SET_NAMESPACE_ENTRY_V6`.
-- The `.apiset` section of `apisetschema.dll`, through [`portex`](https://crates.io/crates/portex)
-  (the `pe` feature).
+- The `.apiset` section of `apisetschema.dll`, through [`portex`](https://github.com/napbat/portex)
+  0.5 (the `pe` feature). portex 0.5 is not on crates.io yet, so the crate uses its `main`
+  branch from GitHub, and it cannot be published before portex 0.5 is published.
 - `no_std + alloc` support. Malformed input gives an error. It does not cause a panic.
 
 ## Installation

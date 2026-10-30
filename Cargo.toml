@@ -19,10 +19,11 @@ std = ["portex?/std"]
 pe = ["dep:portex"]
 
 [dependencies]
-portex = { version = "0.4", default-features = false, optional = true }
+# portex 0.5 is not on crates.io yet. Use the main branch until it is published.
+portex = { git = "https://github.com/napbat/portex", branch = "main", default-features = false, optional = true }
 
 [dev-dependencies]
-portex = { version = "0.4", default-features = false }
+portex = { git = "https://github.com/napbat/portex", branch = "main", default-features = false }
 
 [[example]]
 name = "resolve"
