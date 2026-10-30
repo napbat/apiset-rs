@@ -307,8 +307,11 @@ fn search_cabinet<R: ReadAt>(
         // A nested cabinet can be larger than 700 MB: keep it in a temporary file.
         let spool = Spool::create()?;
         io::copy(&mut cabinet.open_file(&name)?, &mut spool.file()?)?;
-        let mut inner = Cab::open(spool.file()?)?;
-        payloads.extend(search_cabinet(&mut inner, &missing, depth + 1)?);
+        // Some `.cab` entries are not cabinets (for example signed catalog containers).
+        match Cab::open(spool.file()?) {
+            Ok(mut inner) => payloads.extend(search_cabinet(&mut inner, &missing, depth + 1)?),
+            Err(e) => eprintln!("  {name}: {e}"),
+        }
     }
     Ok(payloads)
 }

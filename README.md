@@ -180,6 +180,38 @@ The symbol server does not have all files. A file is unavailable in these condit
 On 2026-10-30, the tool downloaded 156 of the 493 files. Most of them are from Windows 10. The
 symbol server had no files for Windows 11 24H2 and later.
 
+### Rebuild the other files from update packages
+
+With `--rebuild`, the tool rebuilds the files that the symbol server does not have. It uses only
+portable Rust code: [msdelta](https://github.com/napbat/msdelta) applies the delta patches, and
+[winupdate](https://github.com/napbat/winupdate) reads the update packages and the install
+media. It does not use Windows APIs, so it runs on each platform.
+
+```text
+cargo run --manifest-path tools/apiset-fetch/Cargo.toml -- --release 11-24H2 --rebuild --check
+```
+
+For each missing file, the tool does these steps:
+
+1. It finds an update that contains the file in the Winbindex index, and the package URL of the
+   update in the [Microsoft Update Catalog](https://www.catalog.update.microsoft.com).
+2. It reads the payload of the file from the package with HTTP range requests. A Windows 11
+   24H2 package is a WIM file, so the tool reads only some megabytes of it. An older package
+   is a cabinet file, so the tool reads it up to the payload, and keeps nested cabinets in
+   temporary files.
+3. A payload is a full file or a forward delta (`f\`). A PA31 delta names the SHA-256 of its
+   source. A PA30 delta does not, so the tool tries the known files of the same release.
+4. It gets the source: a file in the cache, a file that it rebuilds first, or a release file
+   from the install media. [UUP dump](https://uupdump.net) gives the Microsoft download URLs
+   of the client and server install media. The tool reads only the directory of each ESD
+   file and the `apisetschema.dll` data in it.
+5. It applies the delta, and checks the SHA-256 of the result against Winbindex.
+
+The tool can rebuild a file only if the catalog still has an update with the file and the
+install media has the release file of the same edition. The catalog no longer has the old
+Windows 10 1607 updates. The install media of some editions (for example `wnc`, `winvos`,
+`nanoserver` and `utilityvm`) is not on UUP dump.
+
 ## Development
 
 [`mise`](https://mise.jdx.dev/) manages the toolchain and the pre-commit hooks:
