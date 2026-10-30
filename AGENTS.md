@@ -74,6 +74,9 @@ Follow the Cargo package layout:
 - Put integration tests in `tests/`.
 - Put fuzz targets in `fuzz/fuzz_targets/`.
 - Put development tools in `tools/<name>/`, each as its own package with `publish = false`.
+  `tools/apiset-fetch` depends on [msdelta](https://github.com/napbat/msdelta) and
+  [winupdate](https://github.com/napbat/winupdate) from their `main` branches. Fix a defect in
+  a delta or package format in that crate, not in the tool.
 - Put examples in `examples/` and benchmarks in `benches/`.
 - For a test, example or benchmark with many files, make a directory with a `main.rs` file and
   the modules.
