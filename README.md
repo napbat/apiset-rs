@@ -3,6 +3,9 @@
 apiset-rs is a parser, builder and resolver for the Windows API set schema. It works with
 `no_std`. It resolves names with the rules of the Windows loader for each schema version.
 
+[![CI](https://github.com/napbat/apiset-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/napbat/apiset-rs/actions/workflows/ci.yml)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](#license)
+
 ## What it supports
 
 - Schema versions 2 (Windows 7), 3 (Windows 8), 4 (Windows 8.1) and 6 (Windows 10 and later).

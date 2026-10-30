@@ -8,6 +8,7 @@ edition = "2024"
 rust-version = "1.88"
 description = "A no_std-friendly parser, builder, and resolver for the Windows API set schema"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/napbat/apiset-rs"
 readme = "README.md"
 keywords = ["apiset", "windows", "loader", "dll", "pe"]
 categories = ["parsing", "development-tools"]
