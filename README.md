@@ -212,6 +212,15 @@ install media has the release file of the same edition. The catalog no longer ha
 Windows 10 1607 updates. The install media of some editions (for example `wnc`, `winvos`,
 `nanoserver` and `utilityvm`) is not on UUP dump.
 
+On 2026-10-30, the symbol server and `--rebuild` together gave 227 of the 493 files, and each
+file parsed as a version 6 schema. The other files were not available for these reasons:
+
+- 117 files: the catalog has no package of an update with the file (Windows 10 1607 and 1809,
+  most of them).
+- 93 files: the delta names a source that is not in the install media on UUP dump, for example
+  the Windows 11 24H2 `wnc`, `winvos`, `nanoserver` and `utilityvm` editions.
+- 56 files: a PA30 delta without a source hash, and no known file of the release is its source.
+
 ## Development
 
 [`mise`](https://mise.jdx.dev/) manages the toolchain and the pre-commit hooks:
