@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [x86_64-pc-windows-msvc, i686-pc-windows-msvc]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install mise
+        uses: jdx/mise-action@v4
+        with:
+          experimental: true
+
+      - name: Add Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: ${{ runner.os }}-${{ matrix.target }}-cargo-
+
+      - name: Build (default features)
+        run: cargo build --release --all-features --target ${{ matrix.target }}
+
+      - name: Build (no_std + alloc)
+        run: cargo build --release --target ${{ matrix.target }} --no-default-features
+
+      - name: Check fuzz targets
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        run: |
+          cargo fmt --manifest-path fuzz/Cargo.toml --check
+          cargo check --manifest-path fuzz/Cargo.toml --all-targets
+          cargo clippy --manifest-path fuzz/Cargo.toml --all-targets -- -D warnings
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+      - name: Clippy (all features and targets)
+        run: cargo clippy --all-features --all-targets --target ${{ matrix.target }} -- -D warnings
+
+      - name: Clippy (no_std + alloc, all targets)
+        run: cargo clippy --no-default-features --all-targets --target ${{ matrix.target }} -- -D warnings
+
+      - name: Clippy (no_std + alloc with pe, all targets)
+        run: cargo clippy --no-default-features --features pe --all-targets --target ${{ matrix.target }} -- -D warnings
+
+      - name: Test (all features)
+        run: cargo test --all-features --target ${{ matrix.target }}
+
+      - name: Test (no_std + alloc)
+        run: cargo test --no-default-features --target ${{ matrix.target }}
+
+      - name: Test (no_std + alloc with pe)
+        run: cargo test --no-default-features --features pe --target ${{ matrix.target }}
+
+      - name: Documentation (all features)
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        run: cargo doc --no-deps --all-features --target ${{ matrix.target }}
+
+      - name: Documentation (no_std + alloc)
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        run: cargo doc --no-deps --no-default-features --target ${{ matrix.target }}
+
+      - name: Verify release package
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        run: cargo package
+
+  msrv:
+    name: MSRV (Rust 1.88)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install MSRV
+        run: rustup toolchain install 1.88.0 --profile minimal
+
+      - name: Cache cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-msrv-1.88-cargo-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: ${{ runner.os }}-msrv-1.88-cargo-
+
+      - name: Check (all features and targets)
+        run: cargo +1.88.0 check --all-features --all-targets
+
+      - name: Check (no_std + alloc, all targets)
+        run: cargo +1.88.0 check --no-default-features --all-targets
+
+      - name: Test (all features)
+        run: cargo +1.88.0 test --all-features
+
+      - name: Test (no_std + alloc)
+        run: cargo +1.88.0 test --no-default-features
+
+      - name: Documentation (all features)
+        run: cargo +1.88.0 doc --no-deps --all-features
+
+      - name: Documentation (no_std + alloc)
+        run: cargo +1.88.0 doc --no-deps --no-default-features
