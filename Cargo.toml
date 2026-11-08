@@ -19,11 +19,13 @@ std = ["portex?/std"]
 pe = ["dep:portex"]
 
 [dependencies]
-# portex 0.5 is not on crates.io yet. Use the main branch until it is published.
-portex = { git = "https://github.com/napbat/portex", branch = "main", default-features = false, optional = true }
+# portex 0.5 is not on crates.io yet. Follow its `main` until it is published. Name it
+# without `branch`, like every dependent does: Cargo treats `branch = "main"` as a second
+# source, which builds a second copy of portex.
+portex = { git = "https://github.com/napbat/portex", default-features = false, optional = true }
 
 [dev-dependencies]
-portex = { git = "https://github.com/napbat/portex", branch = "main", default-features = false }
+portex = { git = "https://github.com/napbat/portex", default-features = false }
 
 [[example]]
 name = "resolve"
